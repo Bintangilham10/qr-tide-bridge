@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TideGap - QR Verifier</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌊 TideGap</h1>
+            <p class="subtitle">QR verification bridge</p>
+        </header>
+        
+        <main>
+            <div class="upload-area" id="dropZone">
+                <div class="upload-message">
+                    <span class="icon">📷</span>
+                    <p>Drop QR code image here<br><small>or click to browse</small></p>
+                </div>
+                <input type="file" id="fileInput" accept="image/png,image/jpeg,image/bmp,image/webp" hidden>
+            </div>
+            
+            <div id="resultArea" style="display:none;">
+                <div id="resultContent"></div>
+            </div>
+            
+            <div id="loading" style="display:none;">
+                <div class="spinner"></div>
+                <p>Processing QR...</p>
+            </div>
+        </main>
+        
+        <footer>
+            <span class="status" id="status">Ready</span>
+        </footer>
+    </div>
+    
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const resultArea = document.getElementById('resultArea');
+        const resultContent = document.getElementById('resultContent');
+        const loading = document.getElementById('loading');
+        const status = document.getElementById('status');
+        
+        dropZone.addEventListener('click', () => fileInput.click());
+        
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) {
+                handleFile(e.target.files[0]);
+            }
+        });
+        
+        function handleFile(file) {
+            const validTypes = ['image/png', 'image/jpeg', 'image/bmp', 'image/webp'];
+            if (!validTypes.includes(file.type)) {
+                alert('Please upload a valid image (PNG, JPEG, BMP, WEBP)');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('qr_image', file);
+            
+            loading.style.display = 'block';
+            resultArea.style.display = 'none';
+            status.textContent = 'Verifying...';
+            
+            fetch('/verify', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                loading.style.display = 'none';
+                resultArea.style.display = 'block';
+                
+                if (data.success) {
+                    const mode = data.mode ? ` (${data.mode})` : '';
+                    resultContent.innerHTML = `
+                        <div class="result success">
+                            <h3>✅ Verification Successful${mode}</h3>
+                            <div class="token-display">
+                                <label>Access Token:</label>
+                                <code>${data.access_token}</code>
+                            </div>
+                            <div class="token-display">
+                                <label>Token Type:</label>
+                                <span>${data.token_type}</span>
+                            </div>
+                            <div class="token-display">
+                                <label>Expires In:</label>
+                                <span>${data.expires_in}s</span>
+                            </div>
+                            ${data.refresh_token ? `<div class="token-display"><label>Refresh Token:</label><code>${data.refresh_token}</code></div>` : ''}
+                            ${data.note ? `<p class="note">${data.note}</p>` : ''}
+                        </div>
+                    `;
+                    status.textContent = 'Verified ✓';
+                } else {
+                    let errorHtml = `
+                        <div class="result error">
+                            <h3>❌ Verification Failed</h3>
+                            <p>${data.error || 'Unknown error'}</p>
+                    `;
+                    if (data.raw_qr_data) {
+                        errorHtml += `
+                            <div class="token-display" style="margin-top:1rem;">
+                                <label>Raw QR Data (first 500 chars):</label>
+                                <code style="font-size:0.7rem;word-break:break-all;">${data.raw_qr_data}</code>
+                            </div>
+                        `;
+                    }
+                    errorHtml += `</div>`;
+                    resultContent.innerHTML = errorHtml;
+                    status.textContent = 'Failed';
+                }
+            })
+            .catch(err => {
+                loading.style.display = 'none';
+                resultArea.style.display = 'block';
+                resultContent.innerHTML = `
+                    <div class="result error">
+                        <h3>⚠️ Request Error</h3>
+                        <p>${err.message}</p>
+                    </div>
+                `;
+                status.textContent = 'Error';
+            });
+        }
+    </script>
+</body>
+</html>
